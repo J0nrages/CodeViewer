@@ -1,60 +1,126 @@
-import React, { useState } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Search, List, Grid, Filter, GitBranch, AlertTriangle, CheckCircle, Clock, BarChart3, Play, Trash2, Download, Copy, Settings, CheckSquare, Square } from 'lucide-react';
-import { mockFileTree, mockFileAnalysis, mockGitInfo } from '../lib/mockData';
-import { FileNode, FileAnalysis, GitInfo, BulkAction, SearchFilter } from '../types';
+import { useState, useEffect } from 'react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Search, List, Grid, Filter, Play, Download, CheckSquare, Square, Loader2, FileText, Maximize2, Copy, Check } from 'lucide-react';
+import { apiClient } from '../lib/api';
+import { FileNode } from '../types';
+import { useProject } from '../contexts/ProjectContext';
 
 export function FileExplorer() {
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['1']));
+  const { selectedProject } = useProject();
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree');
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'modified' | 'issues'>('all');
-  const [searchField, setSearchField] = useState<'name' | 'path' | 'extension' | 'language' | 'content' | 'author' | 'tags'>('name');
+  const [searchField, setSearchField] = useState<'name' | 'path' | 'extension' | 'language'>('name');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [groupByDirectory, setGroupByDirectory] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentViewMode, setContentViewMode] = useState<'raw' | 'documentation'>('raw');
+  const [showFullDocument, setShowFullDocument] = useState(false);
+  const [copySuccess, setCopySuccess] = useState<'raw' | 'doc' | null>(null);
 
-  const searchFilters: SearchFilter[] = [
-    { field: 'name', label: 'File Name', placeholder: 'Search by file name...' },
-    { field: 'path', label: 'File Path', placeholder: 'Search by file path...' },
-    { field: 'extension', label: 'Extension', placeholder: 'Search by extension...' },
-    { field: 'language', label: 'Language', placeholder: 'Search by language...' },
-    { field: 'content', label: 'Content', placeholder: 'Search file contents...' },
-    { field: 'author', label: 'Author', placeholder: 'Search by author...' },
-    { field: 'tags', label: 'Tags', placeholder: 'Search by tags...' }
-  ];
-
-  const bulkActions: BulkAction[] = [
-    {
-      id: 'analyze',
-      label: 'Run Analysis',
-      icon: 'BarChart3',
-      action: (files) => console.log('Analyzing files:', files.map(f => f.name)),
-      requiresAnalysis: false
-    },
-    {
-      id: 'download',
-      label: 'Download',
-      icon: 'Download',
-      action: (files) => console.log('Downloading files:', files.map(f => f.name))
-    },
-    {
-      id: 'copy-path',
-      label: 'Copy Paths',
-      icon: 'Copy',
-      action: (files) => {
-        const paths = files.map(f => f.path).join('\n');
-        navigator.clipboard.writeText(paths);
-      }
-    },
-    {
-      id: 'delete',
-      label: 'Delete',
-      icon: 'Trash2',
-      action: (files) => console.log('Deleting files:', files.map(f => f.name)),
-      dangerous: true
+  // Load file tree when a project is selected
+  useEffect(() => {
+    if (selectedProject) {
+      loadFileTree(selectedProject.id);
+    } else {
+      setFileTree([]);
     }
-  ];
+  }, [selectedProject]);
+
+  const loadFileTree = async (projectId: string) => {
+    try {
+      setLoading(true);
+      const response = await apiClient.getProjectFileTree(projectId);
+      setFileTree(response.tree);
+      
+      // Expand the root node by default
+      if (response.tree.length > 0) {
+        setExpandedNodes(new Set([response.tree[0].id]));
+      }
+    } catch (err) {
+      setError('Failed to load file tree');
+      console.error('Error loading file tree:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadFileContent = async (fileId: string) => {
+    if (!selectedProject) return;
+    
+    try {
+      setContentLoading(true);
+      const response = await apiClient.getFileContent(fileId);
+      setFileContent(response.content);
+    } catch (err) {
+      console.error('Error loading file content:', err);
+      setFileContent('Error loading file content');
+    } finally {
+      setContentLoading(false);
+    }
+  };
+
+  // Load content when file selection changes
+  useEffect(() => {
+    if (selectedFile && selectedFile.type === 'file') {
+      setFileContent(null);
+      
+      loadFileContent(selectedFile.id);
+    }
+  }, [selectedFile, contentViewMode]);
+
+  const copyToClipboard = async (content: string, type: 'raw' | 'doc') => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopySuccess(type);
+      setTimeout(() => setCopySuccess(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy content:', err);
+    }
+  };
+
+  const parseMarkdown = (text: string) => {
+    if (!text) return '';
+    
+    return text
+      // Headers
+      .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold text-gray-900 mt-4 mb-2">$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold text-gray-900 mt-6 mb-3">$1</h2>')
+      .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-gray-900 mt-8 mb-4">$1</h1>')
+      
+      // Code blocks
+      .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-100 rounded-lg p-4 my-4 overflow-x-auto"><code class="text-sm font-mono text-gray-800">$2</code></pre>')
+      
+      // Inline code
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-2 py-1 rounded text-sm font-mono text-gray-800">$1</code>')
+      
+      // Bold
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+      
+      // Italic
+      .replace(/\*(.*?)\*/g, '<em class="italic text-gray-800">$1</em>')
+      
+      // Links
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-indigo-600 hover:text-indigo-800 underline">$1</a>')
+      
+      // Lists
+      .replace(/^- (.*$)/gim, '<li class="ml-4 list-disc list-inside text-gray-700 mb-1">$1</li>')
+      .replace(/^\* (.*$)/gim, '<li class="ml-4 list-disc list-inside text-gray-700 mb-1">$1</li>')
+      .replace(/^\d+\. (.*$)/gim, '<li class="ml-4 list-decimal list-inside text-gray-700 mb-1">$1</li>')
+      
+      // Paragraphs
+      .replace(/\n\n/g, '</p><p class="text-gray-700 mb-3">')
+      .replace(/^(?!<[h|l|p|c])(.+$)/gim, '<p class="text-gray-700 mb-3">$1</p>')
+      
+      // Line breaks
+      .replace(/\n/g, '<br>');
+  };
 
   const toggleNode = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes);
@@ -119,18 +185,6 @@ export function FileExplorer() {
         case 'language':
           matches = node.language?.toLowerCase().includes(searchTerm) || false;
           break;
-        case 'content':
-          // In real implementation, this would search file contents
-          matches = node.name.toLowerCase().includes(searchTerm);
-          break;
-        case 'author':
-          // In real implementation, this would search git author
-          const gitInfo = getGitInfo(node.id);
-          matches = gitInfo?.author.toLowerCase().includes(searchTerm) || false;
-          break;
-        case 'tags':
-          matches = node.tags?.some(tag => tag.toLowerCase().includes(searchTerm)) || false;
-          break;
         default:
           matches = node.name.toLowerCase().includes(searchTerm);
       }
@@ -191,7 +245,7 @@ export function FileExplorer() {
     );
   };
 
-  const filteredTree = filterNodes(mockFileTree, searchTerm);
+  const filteredTree = filterNodes(fileTree, searchTerm);
 
   const flattenNodes = (nodes: FileNode[]): FileNode[] => {
     const result: FileNode[] = [];
@@ -210,28 +264,21 @@ export function FileExplorer() {
   };
 
   const flatFiles = flattenNodes(filteredTree);
-  const filteredFiles = flatFiles.filter(file => {
+  const filteredFiles = flatFiles.filter(() => {
     if (filterStatus === 'all') return true;
-    if (filterStatus === 'modified') {
-      const gitInfo = mockGitInfo[file.id];
-      return gitInfo && gitInfo.status !== 'clean';
-    }
-    if (filterStatus === 'issues') {
-      const analysis = mockFileAnalysis.find(a => a.fileId === file.id);
-      return analysis && analysis.issues.length > 0;
-    }
+    // We would implement actual filtering based on git status and issues here
     return true;
   });
 
   const groupFilesByDirectory = (files: FileNode[]) => {
     const grouped: { [directory: string]: FileNode[] } = {};
     
-    files.forEach(file => {
-      const directory = file.path.substring(0, file.path.lastIndexOf('/')) || '/';
+    files.forEach(fileItem => {
+      const directory = fileItem.path.substring(0, fileItem.path.lastIndexOf('/')) || '/';
       if (!grouped[directory]) {
         grouped[directory] = [];
       }
-      grouped[directory].push(file);
+      grouped[directory].push(fileItem);
     });
     
     return grouped;
@@ -260,33 +307,153 @@ export function FileExplorer() {
     setSelectedFiles(newSelected);
   };
 
-  const executeBulkAction = (actionId: string) => {
-    const action = bulkActions.find(a => a.id === actionId);
-    if (!action) return;
+  const executeBulkAction = async (actionId: string) => {
+    if (!selectedProject) return;
     
     const selectedFileNodes = flatFiles.filter(f => selectedFiles.has(f.id));
-    action.action(selectedFileNodes);
     
-    // Clear selection after action
-    setSelectedFiles(new Set());
-  };
-
-  const getAnalysis = (fileId: string): FileAnalysis | undefined => {
-    return mockFileAnalysis.find(a => a.fileId === fileId);
-  };
-
-  const getGitInfo = (fileId: string): GitInfo | undefined => {
-    return mockGitInfo[fileId];
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'modified': return 'text-orange-600';
-      case 'staged': return 'text-green-600';
-      case 'untracked': return 'text-blue-600';
-      default: return 'text-gray-600';
+    try {
+      switch (actionId) {
+        case 'analyze':
+          // In a real implementation, this would trigger analysis for selected files
+          console.log('Analyzing files:', selectedFileNodes.map(f => f.name));
+          break;
+        case 'copy-path': {
+          const paths = selectedFileNodes.map(f => f.path).join('\n');
+          navigator.clipboard.writeText(paths);
+          break;
+        }
+        default:
+          console.log(`Executing action ${actionId} on files:`, selectedFileNodes.map(f => f.name));
+      }
+      
+      // Clear selection after action
+      setSelectedFiles(new Set());
+    } catch (err) {
+      setError('Failed to execute bulk action');
+      console.error('Error executing bulk action:', err);
     }
   };
+
+  
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <p className="text-red-800">{error}</p>
+          <button
+            onClick={() => selectedProject && loadFileTree(selectedProject.id)}
+            className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selectedProject) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">File Explorer</h1>
+          <p className="text-gray-600 mt-2">Browse and explore your project structure</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+          <Folder className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No Project Selected</h3>
+          <p className="text-gray-600">Please select a project from the dropdown in the header to explore its files</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Full Document Modal Component
+  if (showFullDocument && selectedFile) {
+    const content = fileContent; // Use file content for both raw and documentation modes
+    const title = selectedFile.name;
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+              <p className="text-gray-600 mt-1">
+                {contentViewMode === 'raw' ? 'Source Code' : 'Auto-generated Documentation'}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowFullDocument(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-auto p-6 relative">
+            <div className="absolute top-4 right-4 z-10">
+              <button
+                onClick={() => content && copyToClipboard(content, contentViewMode === 'raw' ? 'raw' : 'doc')}
+                className="p-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg shadow-sm transition-colors flex items-center space-x-2"
+                disabled={!content}
+              >
+                {copySuccess === (contentViewMode === 'raw' ? 'raw' : 'doc') ? (
+                  <>
+                    <Check className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-green-600">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 text-gray-600" />
+                    <span className="text-sm text-gray-600">Copy to Clipboard</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {contentLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+              </div>
+            ) : content ? (
+              <div className={contentViewMode === 'raw' ? 'font-mono text-sm' : 'max-w-none'}>
+                {contentViewMode === 'raw' ? (
+                  <pre className="whitespace-pre-wrap break-words text-gray-800 pr-20">
+                    {content}
+                  </pre>
+                ) : (
+                  <div 
+                    className="prose prose-lg max-w-none pr-20"
+                    dangerouslySetInnerHTML={{ 
+                      __html: parseMarkdown(content)
+                    }}
+                  />
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                No content available
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -306,15 +473,14 @@ export function FileExplorer() {
                 onChange={(e) => setSearchField(e.target.value as any)}
                 className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
-                {searchFilters.map(filter => (
-                  <option key={filter.field} value={filter.field}>
-                    {filter.label}
-                  </option>
-                ))}
+                <option value="name">File Name</option>
+                <option value="path">File Path</option>
+                <option value="extension">Extension</option>
+                <option value="language">Language</option>
               </select>
               <input
                 type="text"
-                placeholder={searchFilters.find(f => f.field === searchField)?.placeholder || 'Search...'}
+                placeholder="Search..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[200px]"
@@ -392,15 +558,18 @@ export function FileExplorer() {
               {selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''} selected
             </span>
             <div className="flex items-center space-x-2">
-              {bulkActions.map(action => (
-                <button
-                  key={action.id}
-                  onClick={() => executeBulkAction(action.id)}
-                  className={`px-3 py-1 text-sm rounded ${action.dangerous ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-white text-gray-700 hover:bg-gray-100'} border`}
-                >
-                  {action.label}
-                </button>
-              ))}
+              <button
+                onClick={() => executeBulkAction('analyze')}
+                className="px-3 py-1 text-sm rounded bg-white text-gray-700 hover:bg-gray-100 border"
+              >
+                Run Analysis
+              </button>
+              <button
+                onClick={() => executeBulkAction('copy-path')}
+                className="px-3 py-1 text-sm rounded bg-white text-gray-700 hover:bg-gray-100 border"
+              >
+                Copy Paths
+              </button>
             </div>
           </div>
         </div>
@@ -432,14 +601,6 @@ export function FileExplorer() {
                     <h2 className="text-xl font-semibold text-gray-900">{selectedFile.name}</h2>
                     <p className="text-sm text-gray-600">{selectedFile.path}</p>
                   </div>
-                  {getGitInfo(selectedFile.id) && (
-                    <div className="flex items-center space-x-2">
-                      <GitBranch className="w-4 h-4 text-gray-500" />
-                      <span className={`text-sm ${getStatusColor(getGitInfo(selectedFile.id)!.status)}`}>
-                        {getGitInfo(selectedFile.id)!.status}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
               
@@ -469,37 +630,37 @@ export function FileExplorer() {
                     </dl>
                   </div>
                   
-                  {showAnalysis && getAnalysis(selectedFile.id) && (
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-900 mb-2">Code Analysis</h3>
-                      <dl className="space-y-2">
-                        <div className="flex justify-between">
-                          <dt className="text-sm text-gray-600">Complexity:</dt>
-                          <dd className="text-sm text-gray-900">{getAnalysis(selectedFile.id)!.complexity}/10</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt className="text-sm text-gray-600">Maintainability:</dt>
-                          <dd className="text-sm text-gray-900">{getAnalysis(selectedFile.id)!.maintainability}%</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt className="text-sm text-gray-600">Test Coverage:</dt>
-                          <dd className="text-sm text-gray-900">{getAnalysis(selectedFile.id)!.testCoverage}%</dd>
-                        </div>
-                        <div className="flex justify-between">
-                          <dt className="text-sm text-gray-600">Issues:</dt>
-                          <dd className="text-sm text-gray-900">{getAnalysis(selectedFile.id)!.issues.length}</dd>
-                        </div>
-                      </dl>
-                    </div>
-                  )}
-                  
                   <div>
                     <h3 className="text-sm font-medium text-gray-900 mb-2">Quick Actions</h3>
                     <div className="space-y-2">
-                      <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                      <button 
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                        onClick={async () => {
+                          if (selectedFile.id) {
+                            try {
+                              const response = await apiClient.getFileContent(selectedFile.id);
+                              console.log('File content:', response.content);
+                            } catch (err) {
+                              console.error('Error getting file content:', err);
+                            }
+                          }
+                        }}
+                      >
                         View Content
                       </button>
-                      <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                      <button 
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                        onClick={async () => {
+                          if (selectedFile.id) {
+                            try {
+                              const response = await apiClient.analyzeFile(selectedFile.id);
+                              console.log('Analysis result:', response);
+                            } catch (err) {
+                              console.error('Error analyzing file:', err);
+                            }
+                          }
+                        }}
+                      >
                         Run Analysis
                       </button>
                       <button className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
@@ -512,35 +673,134 @@ export function FileExplorer() {
                   </div>
                 </div>
                 
-                {showAnalysis && getAnalysis(selectedFile.id) && getAnalysis(selectedFile.id)!.issues.length > 0 && (
-                  <div className="mb-6">
-                    <h3 className="text-sm font-medium text-gray-900 mb-3">Code Issues</h3>
-                    <div className="space-y-2">
-                      {getAnalysis(selectedFile.id)!.issues.map((issue) => (
-                        <div key={issue.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                          <div className="flex-shrink-0">
-                            {issue.type === 'error' && <AlertTriangle className="w-4 h-4 text-red-500" />}
-                            {issue.type === 'warning' && <AlertTriangle className="w-4 h-4 text-yellow-500" />}
-                            {issue.type === 'info' && <CheckCircle className="w-4 h-4 text-blue-500" />}
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm text-gray-900">{issue.message}</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              Line {issue.line}:{issue.column} • {issue.rule}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-900">Content Viewer</h3>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex bg-gray-100 rounded-lg p-1">
+                        <button
+                          onClick={() => setContentViewMode('raw')}
+                          className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                            contentViewMode === 'raw'
+                              ? 'bg-white text-gray-900 shadow-sm'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          Raw
+                        </button>
+                        <button
+                          onClick={() => setContentViewMode('documentation')}
+                          className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                            contentViewMode === 'documentation'
+                              ? 'bg-white text-gray-900 shadow-sm'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          Docs
+                        </button>
+                      </div>
+                      
+                      <button
+                        onClick={() => setShowFullDocument(true)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center space-x-1"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                        <span>Full View</span>
+                      </button>
                     </div>
                   </div>
-                )}
-                
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2">File Preview</h3>
-                  <div className="bg-white rounded border p-4 font-mono text-sm text-gray-600">
-                    <p>// File content preview would appear here</p>
-                    <p>// This would show the actual file contents</p>
-                    <p>// with syntax highlighting based on the file type</p>
+                  
+                  <div className="bg-white rounded border min-h-[300px] max-h-[600px] overflow-auto">
+                    {contentLoading ? (
+                      <div className="flex items-center justify-center h-32">
+                        <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                      </div>
+                    ) : contentViewMode === 'raw' ? (
+                      <div className="relative">
+                        <div className="absolute top-2 right-2 z-10">
+                          <button
+                            onClick={() => fileContent && copyToClipboard(fileContent, 'raw')}
+                            className="p-2 bg-white/90 hover:bg-white border border-gray-200 rounded-lg shadow-sm transition-colors flex items-center space-x-1"
+                            disabled={!fileContent}
+                          >
+                            {copySuccess === 'raw' ? (
+                              <>
+                                <Check className="w-3 h-3 text-green-600" />
+                                <span className="text-xs text-green-600">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 text-gray-600" />
+                                <span className="text-xs text-gray-600">Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="p-4 pt-12">
+                          {fileContent ? (
+                            <pre className="font-mono text-xs text-gray-800 whitespace-pre-wrap break-words">
+                              {fileContent}
+                            </pre>
+                          ) : (
+                            <div className="text-sm text-gray-500 italic">
+                              No content available
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="absolute top-2 right-2 z-10">
+                          <button
+                            onClick={() => fileContent && copyToClipboard(fileContent, 'doc')}
+                            className="p-2 bg-white/90 hover:bg-white border border-gray-200 rounded-lg shadow-sm transition-colors flex items-center space-x-1"
+                            disabled={!fileContent}
+                          >
+                            {copySuccess === 'doc' ? (
+                              <>
+                                <Check className="w-3 h-3 text-green-600" />
+                                <span className="text-xs text-green-600">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 text-gray-600" />
+                                <span className="text-xs text-gray-600">Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="p-4 pt-12">
+                          {fileContent ? (
+                            <div className="max-w-none">
+                              <div className="flex items-center space-x-2 mb-4 pb-3 border-b border-gray-200">
+                                <FileText className="w-5 h-5 text-indigo-600" />
+                                <div>
+                                  <h3 className="font-semibold text-gray-900">{selectedFile.name}</h3>
+                                  <div className="flex items-center space-x-2 mt-1">
+                                    <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full">
+                                      Markdown
+                                    </span>
+                                    <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                                      {selectedFile.extension?.toUpperCase() || 'File'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div 
+                                className="prose prose-sm max-w-none"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: parseMarkdown(fileContent)
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500 italic">
+                              No content available for this file
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -604,30 +864,12 @@ export function FileExplorer() {
                           Modified
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        {showAnalysis && (
-                          <>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Complexity
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Issues
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Coverage
-                            </th>
-                          </>
-                        )}
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {files.map((file) => {
-                        const analysis = getAnalysis(file.id);
-                        const gitInfo = getGitInfo(file.id);
                         const isSelected = selectedFiles.has(file.id);
                         
                         return (
@@ -668,76 +910,6 @@ export function FileExplorer() {
                               {new Date(file.lastModified).toLocaleDateString()}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              {gitInfo ? (
-                                <div className="flex items-center space-x-2">
-                                  <GitBranch className="w-3 h-3 text-gray-400" />
-                                  <span className={`text-sm ${getStatusColor(gitInfo.status)}`}>
-                                    {gitInfo.status}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-400">-</span>
-                              )}
-                            </td>
-                            {showAnalysis && (
-                              <>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {analysis ? (
-                                    <div className="flex items-center">
-                                      <BarChart3 className="w-3 h-3 mr-1 text-gray-400" />
-                                      <span className={`text-sm ${
-                                        analysis.complexity > 7 ? 'text-red-600' :
-                                        analysis.complexity > 5 ? 'text-yellow-600' :
-                                        'text-green-600'
-                                      }`}>
-                                        {analysis.complexity.toFixed(1)}
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-sm text-gray-400">-</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {analysis ? (
-                                    <div className="flex items-center">
-                                      {analysis.issues.length > 0 ? (
-                                        <>
-                                          <AlertTriangle className="w-3 h-3 mr-1 text-yellow-500" />
-                                          <span className="text-sm text-yellow-600">{analysis.issues.length}</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircle className="w-3 h-3 mr-1 text-green-500" />
-                                          <span className="text-sm text-green-600">0</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-sm text-gray-400">-</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {analysis ? (
-                                    <div className="flex items-center">
-                                      <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                                        <div
-                                          className={`h-2 rounded-full ${
-                                            analysis.testCoverage >= 80 ? 'bg-green-500' :
-                                            analysis.testCoverage >= 60 ? 'bg-yellow-500' :
-                                            'bg-red-500'
-                                          }`}
-                                          style={{ width: `${analysis.testCoverage}%` }}
-                                        />
-                                      </div>
-                                      <span className="text-sm text-gray-900">{analysis.testCoverage}%</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-sm text-gray-400">-</span>
-                                  )}
-                                </td>
-                              </>
-                            )}
-                            <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center space-x-2">
                                 <button
                                   onClick={() => console.log('Analyze file:', file.name)}
@@ -752,13 +924,6 @@ export function FileExplorer() {
                                   title="Download"
                                 >
                                   <Download className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => console.log('File settings:', file.name)}
-                                  className="text-gray-600 hover:text-gray-800"
-                                  title="Settings"
-                                >
-                                  <Settings className="w-4 h-4" />
                                 </button>
                               </div>
                             </td>
@@ -798,30 +963,12 @@ export function FileExplorer() {
                         Modified
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      {showAnalysis && (
-                        <>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Complexity
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Issues
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Coverage
-                          </th>
-                        </>
-                      )}
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredFiles.map((file) => {
-                      const analysis = getAnalysis(file.id);
-                      const gitInfo = getGitInfo(file.id);
                       const isSelected = selectedFiles.has(file.id);
                       
                       return (
@@ -862,76 +1009,6 @@ export function FileExplorer() {
                             {new Date(file.lastModified).toLocaleDateString()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {gitInfo ? (
-                              <div className="flex items-center space-x-2">
-                                <GitBranch className="w-3 h-3 text-gray-400" />
-                                <span className={`text-sm ${getStatusColor(gitInfo.status)}`}>
-                                  {gitInfo.status}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-gray-400">-</span>
-                            )}
-                          </td>
-                          {showAnalysis && (
-                            <>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {analysis ? (
-                                  <div className="flex items-center">
-                                    <BarChart3 className="w-3 h-3 mr-1 text-gray-400" />
-                                    <span className={`text-sm ${
-                                      analysis.complexity > 7 ? 'text-red-600' :
-                                      analysis.complexity > 5 ? 'text-yellow-600' :
-                                      'text-green-600'
-                                    }`}>
-                                      {analysis.complexity.toFixed(1)}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <span className="text-sm text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {analysis ? (
-                                  <div className="flex items-center">
-                                    {analysis.issues.length > 0 ? (
-                                      <>
-                                        <AlertTriangle className="w-3 h-3 mr-1 text-yellow-500" />
-                                        <span className="text-sm text-yellow-600">{analysis.issues.length}</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <CheckCircle className="w-3 h-3 mr-1 text-green-500" />
-                                        <span className="text-sm text-green-600">0</span>
-                                      </>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-sm text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {analysis ? (
-                                  <div className="flex items-center">
-                                    <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                                      <div
-                                        className={`h-2 rounded-full ${
-                                          analysis.testCoverage >= 80 ? 'bg-green-500' :
-                                          analysis.testCoverage >= 60 ? 'bg-yellow-500' :
-                                          'bg-red-500'
-                                        }`}
-                                        style={{ width: `${analysis.testCoverage}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-sm text-gray-900">{analysis.testCoverage}%</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-sm text-gray-400">-</span>
-                                )}
-                              </td>
-                            </>
-                          )}
-                          <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center space-x-2">
                               <button
                                 onClick={() => console.log('Analyze file:', file.name)}
@@ -946,13 +1023,6 @@ export function FileExplorer() {
                                 title="Download"
                               >
                                 <Download className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => console.log('File settings:', file.name)}
-                                className="text-gray-600 hover:text-gray-800"
-                                title="Settings"
-                              >
-                                <Settings className="w-4 h-4" />
                               </button>
                             </div>
                           </td>

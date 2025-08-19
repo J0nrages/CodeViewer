@@ -141,13 +141,15 @@ backend/
 
 #### Main Scripts (Root Directory)
 - `bun run dev` - Start both frontend and backend in parallel
-- `bun run dev:frontend` - Start Vite frontend only (port 5173)
-- `bun run dev:backend` - Start Fastify backend only (port 3001)
+- `bun run dev:frontend` - Start Vite frontend only (port 5200)
+- `bun run dev:backend` - Start Fastify backend only (port 7900)
 - `bun run build` - Build frontend production bundle
 - `bun run build:backend` - Build backend for production
 - `bun run lint` - Run ESLint code quality checks
 - `bun run migrate` - Initialize/update database
 - `bun run start` - Start both production servers
+- `bun run scan` - Scan a new repository using CLI prompt
+- `bun run test-llm` - Test LLM analysis functionality
 
 #### Backend Scripts (backend/ directory)
 - `bun run dev` - Start backend with file watching
@@ -159,7 +161,7 @@ backend/
 
 #### Scan Repository
 ```bash
-curl -X POST http://localhost:3001/api/v1/projects/scan \
+curl -X POST http://localhost:7900/api/v1/projects/scan \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Project",
@@ -170,12 +172,12 @@ curl -X POST http://localhost:3001/api/v1/projects/scan \
 
 #### Get Project Files
 ```bash
-curl http://localhost:3001/api/v1/projects/{projectId}/files
+curl http://localhost:7900/api/v1/projects/{projectId}/files
 ```
 
 #### Analyze File
 ```bash
-curl -X POST http://localhost:3001/api/v1/files/{fileId}/analyze
+curl -X POST http://localhost:7900/api/v1/files/{fileId}/analyze
 ```
 
 ## Integration

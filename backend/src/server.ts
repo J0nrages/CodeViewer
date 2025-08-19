@@ -1,13 +1,8 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { initDatabase } from './database/init.js';
 import { registerRoutes } from './routes/index.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const fastify = Fastify({
   logger: {
@@ -20,7 +15,7 @@ const fastify = Fastify({
 
 // Register CORS
 await fastify.register(cors, {
-  origin: ['http://localhost:5170', 'http://localhost:5171'],
+  origin: ['http://localhost:5170', 'http://localhost:5171', 'http://localhost:5200'],
   credentials: true
 });
 

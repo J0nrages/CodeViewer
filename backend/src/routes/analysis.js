@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { analyzeFile } from '../services/codeAnalyzer.js';
+import { analyzeFileWithLLM } from '../services/llm/codeAnalyzer.js';
 
 export async function analysisRoutes(fastify) {
   // Analyze single file
@@ -71,6 +72,33 @@ export async function analysisRoutes(fastify) {
     } catch (error) {
       fastify.log.error(error);
       reply.code(500).send({ error: 'Failed to fetch analysis' });
+    }
+  });
+
+  // LLM Analysis endpoint
+  fastify.post('/files/:fileId/llm-analyze', async (request, reply) => {
+    try {
+      const { fileId } = request.params;
+
+      const file = fastify.db.prepare(`
+        SELECT * FROM file_nodes WHERE id = ?
+      `).get(fileId);
+
+      if (!file) {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+
+      if (file.type === 'directory') {
+        return reply.code(400).send({ error: 'Cannot analyze directory' });
+      }
+
+      // Perform LLM analysis
+      const llmAnalysis = await analyzeFileWithLLM(file.path);
+
+      return { analysis: llmAnalysis };
+    } catch (error) {
+      fastify.log.error(error);
+      reply.code(500).send({ error: 'Failed to analyze file with LLM' });
     }
   });
 

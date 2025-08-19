@@ -21,6 +21,7 @@ export interface FileNode {
   children?: FileNode[];
   lastModified: string;
   language?: string;
+  tags?: string[];
 }
 
 export interface WikiDocument {
@@ -86,6 +87,25 @@ export interface CodeIssue {
   line?: number;
   column?: number;
   rule?: string;
+}
+
+export interface CodeSuggestion {
+  id: string;
+  type: 'improvement' | 'warning' | 'error';
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+  line?: number;
+  column?: number;
+  rule?: string;
+}
+
+export interface LLMAnalysisResult {
+  suggestions: CodeSuggestion[];
+  complexity: number;
+  maintainability: number;
+  securityIssues: string[];
+  performanceTips: string[];
+  summary: string;
 }
 
 export interface GitInfo {

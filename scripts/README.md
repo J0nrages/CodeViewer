@@ -36,6 +36,37 @@ bun run pre-flight
 3. **Verification**: Checks that critical files exist
 4. **Ready confirmation**: Shows URLs for frontend and backend
 
+### `scan-repository.js`
+Scan a new repository and add it to CodeViewer for analysis.
+
+**Usage:**
+```bash
+bun run scan
+# or directly:
+node scripts/scan-repository.js
+```
+
+**What it does:**
+1. Prompts for repository path, project name, and description
+2. Sends a request to the backend to scan the repository
+3. The backend processes the repository in the background
+
+### `test-llm-analysis.js`
+Test the LLM analysis functionality on an existing file in the database.
+
+**Usage:**
+```bash
+bun run test-llm
+# or directly:
+node scripts/test-llm-analysis.js
+```
+
+**What it does:**
+1. Fetches the first project from the database
+2. Finds a code file (js/ts/jsx/tsx) in that project
+3. Runs LLM analysis on the file
+4. Displays the results
+
 ## Updated Package.json Scripts
 
 ### Main Scripts (with pre-flight)
@@ -49,6 +80,8 @@ bun run pre-flight
 ### Utility Scripts
 - `bun run kill-ports` - Just kill port processes
 - `bun run pre-flight` - Just run pre-flight checks
+- `bun run scan` - Scan a new repository
+- `bun run test-llm` - Test LLM analysis functionality
 
 ## Port Configuration
 
@@ -85,3 +118,13 @@ bun run dev:clean
 ```
 
 Use this when you know the environment is already clean and you just want to restart servers quickly.
+
+**Add a new repository for analysis:**
+```bash
+bun run scan
+```
+
+**Test LLM analysis functionality:**
+```bash
+bun run test-llm
+```

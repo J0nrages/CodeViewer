@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { glob } from 'glob';
-import { stat, readdir } from 'fs/promises';
+import { statSync } from 'fs';
 import { join, relative, extname, basename } from 'path';
 import { simpleGit } from 'simple-git';
 import { getLanguageFromExtension } from '../utils/languageDetector.js';
@@ -22,18 +22,27 @@ export async function scanRepository(db, projectId, repositoryPath) {
       console.log('Not a git repository or git not available');
     }
 
-    // Scan all files
-    const pattern = join(repositoryPath, '**/*');
-    const allPaths = await glob(pattern, { 
+    // Scan all files with better filtering
+    const allPaths = await glob('**/*', { 
+      cwd: repositoryPath,
       dot: false,
       ignore: [
-        '**/node_modules/**',
-        '**/.git/**',
-        '**/dist/**',
-        '**/build/**',
-        '**/.next/**',
-        '**/coverage/**',
-        '**/*.log'
+        'node_modules/**',
+        '.git/**',
+        'dist/**',
+        'build/**',
+        '.next/**',
+        'coverage/**',
+        '**/*.log',
+        '**/.DS_Store',
+        '**/npm-debug.log*',
+        '**/yarn-debug.log*',
+        '**/yarn-error.log*',
+        '**/.npm',
+        '**/.eslintcache',
+        '**/package-lock.json',
+        '**/yarn.lock',
+        '**/pnpm-lock.yaml'
       ]
     });
 
@@ -59,18 +68,24 @@ export async function scanRepository(db, projectId, repositoryPath) {
       const batch = allPaths.slice(i, i + batchSize);
       
       const transaction = db.transaction(() => {
-        for (const fullPath of batch) {
-          processFile(
-            fullPath, 
-            repositoryPath, 
-            projectId, 
-            insertFile, 
-            insertGitInfo, 
-            git, 
-            isGitRepo, 
-            gitBranch
-          );
-          processedCount++;
+        for (const relativePath of batch) {
+          const fullPath = join(repositoryPath, relativePath);
+          try {
+            processFileSync(
+              fullPath, 
+              relativePath,
+              repositoryPath, 
+              projectId, 
+              insertFile, 
+              insertGitInfo, 
+              git, 
+              isGitRepo, 
+              gitBranch
+            );
+            processedCount++;
+          } catch (error) {
+            console.error(`Error processing file ${fullPath}:`, error.message);
+          }
         }
       });
 
@@ -92,73 +107,44 @@ export async function scanRepository(db, projectId, repositoryPath) {
   }
 }
 
-async function processFile(fullPath, repositoryPath, projectId, insertFile, insertGitInfo, git, isGitRepo, gitBranch) {
-  try {
-    const stats = await stat(fullPath);
-    const relativePath = relative(repositoryPath, fullPath);
-    const fileName = basename(fullPath);
-    const extension = extname(fullPath).slice(1);
-    const language = getLanguageFromExtension(extension);
-    
-    const fileId = randomUUID();
-    const isDirectory = stats.isDirectory();
-    
-    // Determine tags based on file characteristics
-    const tags = [];
-    if (fileName.includes('test') || fileName.includes('spec')) {
-      tags.push('test');
-    }
-    if (fileName.includes('config')) {
-      tags.push('config');
-    }
-    if (extension === 'md') {
-      tags.push('documentation');
-    }
-
-    // Insert file record
-    insertFile.run(
-      fileId,
-      projectId,
-      fileName,
-      isDirectory ? 'directory' : 'file',
-      fullPath,
-      relativePath,
-      isDirectory ? null : stats.size,
-      isDirectory ? null : extension,
-      isDirectory ? null : language,
-      JSON.stringify(tags),
-      stats.mtime.toISOString()
-    );
-
-    // Get git information if available
-    if (isGitRepo && !isDirectory) {
-      try {
-        const gitStatus = await git.status([relativePath]);
-        const log = await git.log({ file: relativePath, maxCount: 1 });
-        
-        let status = 'clean';
-        if (gitStatus.modified.includes(relativePath)) status = 'modified';
-        else if (gitStatus.staged.includes(relativePath)) status = 'staged';
-        else if (gitStatus.not_added.includes(relativePath)) status = 'untracked';
-
-        const lastCommit = log.latest;
-        
-        insertGitInfo.run(
-          randomUUID(),
-          fileId,
-          gitBranch,
-          lastCommit ? lastCommit.hash.substring(0, 8) : null,
-          lastCommit ? lastCommit.author_name : null,
-          status
-        );
-      } catch (gitError) {
-        // Git info not available for this file, skip
-      }
-    }
-    
-  } catch (error) {
-    console.error(`Error processing file ${fullPath}:`, error.message);
+function processFileSync(fullPath, relativePath, repositoryPath, projectId, insertFile, insertGitInfo, git, isGitRepo, gitBranch) {
+  const stats = statSync(fullPath);
+  const fileName = basename(fullPath);
+  const extension = extname(fullPath).slice(1);
+  const language = getLanguageFromExtension(extension);
+  
+  const fileId = randomUUID();
+  const isDirectory = stats.isDirectory();
+  
+  // Determine tags based on file characteristics
+  const tags = [];
+  if (fileName.includes('test') || fileName.includes('spec')) {
+    tags.push('test');
   }
+  if (fileName.includes('config')) {
+    tags.push('config');
+  }
+  if (extension === 'md') {
+    tags.push('documentation');
+  }
+
+  // Insert file record
+  insertFile.run(
+    fileId,
+    projectId,
+    fileName,
+    isDirectory ? 'directory' : 'file',
+    fullPath,
+    relativePath,
+    isDirectory ? null : stats.size,
+    isDirectory ? null : extension,
+    isDirectory ? null : language,
+    JSON.stringify(tags),
+    stats.mtime.toISOString()
+  );
+
+  // Skip git info for now to keep it simple and fast
+  // We can add git integration later if needed
 }
 
 function updateProjectStats(db, projectId) {

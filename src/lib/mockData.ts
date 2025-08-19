@@ -1,5 +1,4 @@
-import { Project, FileNode, WikiDocument, FlowChartNode, QualityMetric } from '../types';
-import { FileAnalysis, CodeIssue, GitInfo, BulkAction, SearchFilter } from '../types';
+import { Project, FileNode, WikiDocument, FlowChartNode, QualityMetric, FileAnalysis, GitInfo } from '../types';
 
 export const mockProjects: Project[] = [
   {

@@ -1,26 +1,54 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Filter, FileText, User, Calendar, Tag } from 'lucide-react';
-import { mockWikiDocuments } from '../lib/mockData';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, Filter, FileText, User, Calendar, Tag, Loader2, Folder } from 'lucide-react';
 import { WikiDocument } from '../types';
+import { useProject } from '../contexts/ProjectContext';
+import { apiClient } from '../lib/api';
 
 export function WikiView() {
+  const { selectedProject } = useProject();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedDocument, setSelectedDocument] = useState<WikiDocument | null>(null);
+  const [wikiDocs, setWikiDocs] = useState<WikiDocument[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load wiki docs when project changes
+  useEffect(() => {
+    if (selectedProject) {
+      loadWikiDocs(selectedProject.id);
+    } else {
+      setWikiDocs([]);
+    }
+  }, [selectedProject]);
+
+  const loadWikiDocs = async (projectId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiClient.getProjectWiki(projectId);
+      setWikiDocs(response.docs);
+    } catch (err) {
+      setError('Failed to load wiki documentation');
+      console.error('Error loading wiki docs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const categories = useMemo(() => {
-    const cats = Array.from(new Set(mockWikiDocuments.map(doc => doc.category)));
+    const cats = Array.from(new Set(wikiDocs.map(doc => doc.category)));
     return ['all', ...cats];
-  }, []);
+  }, [wikiDocs]);
 
   const types = useMemo(() => {
-    const docTypes = Array.from(new Set(mockWikiDocuments.map(doc => doc.type)));
+    const docTypes = Array.from(new Set(wikiDocs.map(doc => doc.type)));
     return ['all', ...docTypes];
-  }, []);
+  }, [wikiDocs]);
 
   const filteredDocuments = useMemo(() => {
-    return mockWikiDocuments.filter(doc => {
+    return wikiDocs.filter(doc => {
       const matchesSearch = doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            doc.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            doc.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -29,7 +57,7 @@ export function WikiView() {
       
       return matchesSearch && matchesCategory && matchesType;
     });
-  }, [searchTerm, selectedCategory, selectedType]);
+  }, [wikiDocs, searchTerm, selectedCategory, selectedType]);
 
   if (selectedDocument) {
     return (
@@ -84,11 +112,53 @@ export function WikiView() {
     );
   }
 
+  if (!selectedProject) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Documentation Wiki</h1>
+          <p className="text-gray-600 mt-2">Search and browse project documentation</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+          <Folder className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No Project Selected</h3>
+          <p className="text-gray-600">Please select a project from the dropdown to view its documentation</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <p className="text-red-800">{error}</p>
+          <button
+            onClick={() => selectedProject && loadWikiDocs(selectedProject.id)}
+            className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Documentation Wiki</h1>
-        <p className="text-gray-600 mt-2">Search and browse project documentation</p>
+        <p className="text-gray-600 mt-2">Auto-generated documentation for {selectedProject.name}</p>
       </div>
 
       {/* Search and Filters */}
@@ -187,10 +257,18 @@ export function WikiView() {
         ))}
       </div>
 
-      {filteredDocuments.length === 0 && (
+      {filteredDocuments.length === 0 && wikiDocs.length === 0 && (
         <div className="text-center py-12">
           <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No documents found</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No documentation found</h3>
+          <p className="text-gray-600">This project doesn't have any README files, API endpoints, or documentable components yet.</p>
+        </div>
+      )}
+      
+      {filteredDocuments.length === 0 && wikiDocs.length > 0 && (
+        <div className="text-center py-12">
+          <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No matching documents</h3>
           <p className="text-gray-600">Try adjusting your search terms or filters</p>
         </div>
       )}

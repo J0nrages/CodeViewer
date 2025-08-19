@@ -20,7 +20,9 @@
     "start": "bun run pre-flight && bun run start:frontend & bun run start:backend",
     "start:clean": "bun run start:frontend & bun run start:backend",
     "start:frontend": "bun run preview",
-    "start:backend": "bun run --cwd backend start"
+    "start:backend": "bun run --cwd backend start",
+    "scan": "node scripts/scan-repository.js",
+    "test-llm": "node scripts/test-llm-analysis.js"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",
