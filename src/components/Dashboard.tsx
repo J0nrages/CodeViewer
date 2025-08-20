@@ -132,14 +132,35 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Repository Path
                   </label>
-                  <input
-                    type="text"
-                    value={scanData.path}
-                    onChange={(e) => setScanData({...scanData, path: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    placeholder="/path/to/your/repository"
-                    required
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (files && files.length > 0) {
+                          const path = files[0].webkitRelativePath || files[0].name;
+                          const folderPath = path.split('/')[0];
+                          setScanData({...scanData, path: folderPath});
+                        }
+                      }}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                      // @ts-ignore - webkitdirectory is not in the types but works in modern browsers
+                      webkitdirectory=""
+                      directory=""
+                      multiple
+                    />
+                    <input
+                      type="text"
+                      value={scanData.path}
+                      onChange={(e) => setScanData({...scanData, path: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      placeholder="Or type the path manually"
+                      required
+                    />
+                    <p className="text-xs text-gray-500">
+                      Select a folder using the button above or type the full path manually
+                    </p>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
